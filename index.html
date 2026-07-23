@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Python実行環境</title>
+    <!-- Ace Editor & Pyodide CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.4.12/ace.js"></script>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: sans-serif; display: flex; height: 100vh; background-color: #f4f4f4; color: #333; overflow: hidden; }
+        .main-container { display: flex; width: 100%; height: 100%; position: relative; }
+        .pane-left { width: 30%; display: flex; flex-direction: column; background-color: #fff; border-right: 1px solid #ddd; border-bottom: 1px solid #ddd; }
+        .pane-header { display: flex; align-items: center; padding: 10px 15px; background-color: #e9ecef; border-bottom: 1px solid #ddd; color: #495057; height: 74px; }
+        .pane-header span { font-size: 21px; font-weight: bold; }
+        .output-area { flex: 1; padding: 12px; font-family: Consolas, Monaco, monospace; font-size: 28px; background-color: #fafafa; color: #333; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+        .output-error { color: #b71c1c; background-color: #ffebee; padding: 10px; border-radius: 4px; border-left: 5px solid #d32f2f; display: block; margin-top: 4px; }
+        .error-title, .hint-title { font-weight: bold; color: #333; }
+        .hint-container { margin-top: 16px; }
+        .ai-container { margin-top: 24px; padding-top: 16px; border-top: 1px dashed #ccc; display: flex; flex-direction: column; gap: 6px; }
+        .ai-section-title { font-size: 14px; color: #666; font-weight: normal; }
+        .ai-prompt-btn { background-color: #f0f0f0; color: #333; border: 1px solid #ccc; border-radius: 4px; padding: 6px 12px; font-size: 14px; cursor: pointer; align-self: flex-start; transition: background-color 0.15s ease; }
+        .ai-prompt-btn:hover { background-color: #e0e0e0; }
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-content { background-color: #fff; padding: 20px; border-radius: 8px; width: 80%; max-width: 600px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; flex-direction: column; gap: 12px; position: relative; }
+        .modal-close-btn { position: absolute; top: 15px; right: 15px; width: 30px; height: 30px; border: 2px solid #757575; border-radius: 50%; background-color: transparent; color: #757575; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s ease; padding: 0; }
+        .modal-close-btn:hover { background-color: #757575; color: #fff; }
+        .modal-content h3 { font-size: 27px; color: #333; padding-right: 30px; }
+        .modal-content textarea { width: 100%; height: 150px; padding: 10px; font-family: monospace; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; resize: vertical; }
+        .modal-content input[type="text"] { width: 100%; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; }
+        .modal-buttons { display: flex; justify-content: flex-end; gap: 10px; }
+        .modal-btn { border: none; border-radius: 4px; cursor: pointer; }
+        .modal-btn-primary { background-color: #2e7d32; color: white; padding: 10px 17px; font-size: 17px; }
+        .modal-btn-primary:hover { background-color: #1b5e20; }
+        .toast-message { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(50, 50, 50, 0.95); color: #fff; padding: 12px 24px; border-radius: 4px; font-size: 15px; font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: none; z-index: 1100; pointer-events: none; }
+        .resizer { width: 8px; background-color: #e0e0e0; cursor: ew-resize; display: flex; align-items: center; justify-content: center; transition: background-color 0.2s; user-select: none; }
+        .resizer::after { content: "⋮"; color: #888; font-size: 16px; font-weight: bold; }
+        .resizer:hover { background-color: #007bff; }
+        .resizer:hover::after { color: #fff; }
+        .pane-right { width: 70%; display: flex; flex-direction: column; position: relative; }
+        .editor-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 15px; background-color: #272822; border-bottom: 1px solid #111; flex-wrap: wrap; height: 74px; }
+        .btn { padding: 9px 21px; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 21px; display: flex; align-items: center; justify-content: center; background-image: none; box-shadow: none; transition: background-color 0.15s ease; user-select: none; }
+        .btn:disabled { background-color: #555 !important; cursor: not-allowed; opacity: 0.7; }
+        .btn-success { background-color: #2e7d32; padding-left: 30px; padding-right: 30px; font-weight: bold; }
+        .btn-success:hover:not(:disabled) { background-color: #1b5e20; }
+        .btn-secondary { background-color: #424242; }
+        .btn-secondary:hover { background-color: #616161; }
+        .status { margin-left: auto; font-size: 15px; color: #aaa; }
+        #editor { flex: 1; width: 100%; height: 100%; }
+        #file-input { display: none; }
+
+        @media (max-width: 640px) {
+            .main-container { flex-direction: column; }
+            .pane-left { width: 100% !important; height: 40%; border-right: none; }
+            .pane-right { width: 100% !important; height: 60%; }
+            .resizer { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container" id="container">
+        <div class="pane-left" id="left-pane">
+            <div class="pane-header"><span>実行結果</span></div>
+            <div class="output-area" id="output"></div>
+        </div>
+        <div class="resizer" id="resizer"></div>
+        <div class="pane-right" id="right-pane">
+            <div class="editor-toolbar">
+                <button class="btn btn-success" id="run-btn" onclick="runCode()" disabled>実行</button>
+                <button class="btn btn-secondary" onclick="downloadCode()">保存</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('file-input').click()">開く</button>
+                <input type="file" id="file-input" accept=".py" onchange="uploadCode(event)">
+                <div style="height: 30px; width: 1px; background-color: #555; margin: 0 4px;"></div>
+                <button class="btn btn-secondary" id="font-plus-btn" title="文字を大きく">＋</button>
+                <button class="btn btn-secondary" id="font-minus-btn" title="文字を小さく">－</button>
+                <span class="status" id="status">読込中...</span>
+            </div>
+            <div id="editor"># input() 関数を使ったサンプルプログラム
+name = input("あなたの名前を入力してください: ")
+print(f"こんにちは、{name}さん！")
+</div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="ai-modal">
+        <div class="modal-content">
+            <button class="modal-close-btn" onclick="closeAiModal()" title="閉じる">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M1 1L11 11M11 1L1 11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+            </button>
+            <div class="toast-message" id="toast-msg">コピーされました。</div>
+            <h3>都立AI用プロンプト</h3>
+            <p style="font-size: 13px; color: #666;">以下のプロンプトが自動生成されました。追加のコメントを書き込んで「コピー」してください。</p>
+            <div>
+                <label style="font-size: 13px; font-weight: bold; display: block; margin-bottom: 4px;">追加のコメント・質問（任意）:</label>
+                <input type="text" id="user-comment-input" placeholder="例：どこを直せばいいか分かりません" oninput="updatePromptText()">
+            </div>
+            <div>
+                <label style="font-size: 13px; font-weight: bold; display: block; margin-bottom: 4px;">生成されたプロンプト:</label>
+                <textarea id="modal-prompt-textarea" readonly></textarea>
+            </div>
+            <div class="modal-buttons">
+                <button class="modal-btn modal-btn-primary" onclick="copyPromptToClipboard()">コピー</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const editor = ace.edit("editor");
+        editor.setTheme("ace/theme/monokai");
+        editor.session.setMode("ace/mode/python");
+        editor.setOptions({ fontSize: "28px", showLineNumbers: true, showGutter: true, tabSize: 4, useSoftTabs: true, enableBasicAutocompletion: true, enableLiveAutocompletion: true });
+
+        let currentFontSize = 28;
+        const outputArea = document.getElementById('output');
+        
+        function changeFontSize(delta) {
+            currentFontSize = Math.max(10, Math.min(64, currentFontSize + delta));
+            editor.setFontSize(currentFontSize + "px");
+            outputArea.style.fontSize = (outputArea.dataset.hasError ? Math.max(10, Math.floor(currentFontSize / 2)) : currentFontSize) + "px";
+        }
+
+        function bindHoldAction(id, delta) {
+            const el = document.getElementById(id);
+            let timer = null;
+            const start = (e) => {
+                if (e.type === 'touchstart') e.preventDefault();
+                changeFontSize(delta);
+                if (!timer) timer = setInterval(() => changeFontSize(delta), 150);
+            };
+            const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+            el.addEventListener('mousedown', start);
+            el.addEventListener('mouseup', stop);
+            el.addEventListener('mouseleave', stop);
+            el.addEventListener('touchstart', start, { passive: false });
+            el.addEventListener('touchend', stop);
+            el.addEventListener('touchcancel', stop);
+        }
+        bindHoldAction('font-plus-btn', 1);
+        bindHoldAction('font-minus-btn', -1);
+
+        async function downloadCode() {
+            const code = editor.getValue();
+            if ('showSaveFilePicker' in window) {
+                try {
+                    const handle = await window.showSaveFilePicker({ suggestedName: 'script.py', types: [{ description: 'Python Files', accept: { 'text/plain': ['.py'] } }] });
+                    const writable = await handle.createWritable();
+                    await writable.write(code);
+                    await writable.close();
+                    return;
+                } catch (err) { if (err.name === 'AbortError') return; }
+            }
+            const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = 'script.py'; a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function uploadCode(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => editor.setValue(e.target.result, -1);
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+
+        const container = document.getElementById('container');
+        const leftPane = document.getElementById('left-pane');
+        const rightPane = document.getElementById('right-pane');
+        const resizer = document.getElementById('resizer');
+        let isResizing = false;
+
+        resizer.addEventListener('mousedown', () => {
+            isResizing = true;
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+        });
+
+        function handleMouseMove(e) {
+            if (!isResizing) return;
+            const rect = container.getBoundingClientRect();
+            let p = Math.max(20, Math.min(80, ((e.clientX - rect.left) / rect.width) * 100));
+            leftPane.style.width = p + '%';
+            rightPane.style.width = (100 - p) + '%';
+            editor.resize();
+        }
+
+        function handleMouseUp() {
+            isResizing = false;
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            editor.resize();
+        }
+
+        let latestErrorStr = "";
+
+        function updatePromptText() {
+            const code = editor.getValue();
+            const comment = document.getElementById('user-comment-input').value.trim();
+            let prompt = `あなたは親切で指導上手なプログラミングの先生です。
+生徒が書いた以下のPythonプログラムでエラーが発生しました。
+
+生徒のプログラミング思考力を育てるため、以下のルールに従って指導してください。
+
+【指導ルール】
+1. 直接の修正後プログラム（答えのコード）は絶対に提示しないでください。
+2. エラーの原因を、生徒にもわかりやすい言葉で丁寧に説明してください。
+3. 生徒が自分で間違いに気づけるよう、注目すべき行やコードの場所を提示し、「〜はどうなっていますか？」といった問いかけ（ヒント）を行ってください。
+
+【生徒が書いたプログラム】
+\`\`\`python
+${code}
+\`\`\`
+
+【発生したエラー】
+${latestErrorStr}`;
+            if (comment) prompt += `\n\n【生徒からの追加コメント・質問】\n${comment}`;
+            document.getElementById('modal-prompt-textarea').value = prompt;
+        }
+
+        function openAiModal() {
+            document.getElementById('user-comment-input').value = "";
+            updatePromptText();
+            document.getElementById('ai-modal').style.display = 'flex';
+        }
+
+        function closeAiModal() { document.getElementById('ai-modal').style.display = 'none'; }
+
+        function copyPromptToClipboard() {
+            const text = document.getElementById('modal-prompt-textarea').value;
+            navigator.clipboard.writeText(text).then(showToastAndClose).catch(() => {
+                const ta = document.getElementById('modal-prompt-textarea');
+                ta.select(); document.execCommand('copy'); window.getSelection().removeAllRanges();
+                showToastAndClose();
+            });
+        }
+
+        function showToastAndClose() {
+            const toast = document.getElementById('toast-msg');
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; closeAiModal(); }, 800);
+        }
+
+        function getPythonErrorParts(err) {
+            let str = err.toString();
+            let hint = "エラーの内容を確認して、プログラムを見直してみましょう。";
+            if (str.includes("SyntaxError")) hint = "書き間違い（構文エラー）があります。\n・文の最後にコロン「:」をつけ忘れていませんか？\n・カッコ「( )」「{ }」「[ ]」の閉じ忘れはありませんか？\n・全角スペースが混ざっていませんか？";
+            else if (str.includes("NameError")) hint = "名前エラー（見つからない名前）です。\n・変数名や関数名のスペルミス（打ち間違い）を確認してみましょう。\n・文字（文字列）を使うときにクォーテーション「\"」や「'」で囲み忘れていませんか？";
+            else if (str.includes("TypeError")) hint = "データ型のエラーです。\n・文字と数値をそのまま足し算（`+`）するなど、種類の違うデータを一緒に計算していませんか？";
+            else if (str.includes("IndexError")) hint = "範囲外エラーです。\n・リストの要素数よりも大きい（または存在しない）何番目かを指定していませんか？";
+            else if (str.includes("ZeroDivisionError")) hint = "ゼロ除算エラーです。\n・数値を 0 で割ろうとしています。";
+            else if (str.includes("IndentationError")) hint = "インデント（行頭の余白・タブ）のエラーです。\n・「Tabキー」や「スペース」の数がズレていないか確認してください。";
+            return { errorText: str, hintText: hint };
+        }
+
+        let pyodide = null;
+        const runBtn = document.getElementById('run-btn');
+        const statusSpan = document.getElementById('status');
+
+        function appendOutput(text) {
+            const span = document.createElement('span');
+            span.textContent = text;
+            outputArea.appendChild(span);
+            outputArea.scrollTop = outputArea.scrollHeight;
+        }
+
+        function appendErrorOutput(err) {
+            outputArea.dataset.hasError = "true";
+            outputArea.style.fontSize = Math.max(10, Math.floor(currentFontSize / 2)) + "px";
+            latestErrorStr = err.toString();
+            const p = getPythonErrorParts(err);
+
+            const errTitle = document.createElement('div');
+            errTitle.className = 'error-title';
+            errTitle.textContent = "エラーが発生しました";
+            outputArea.appendChild(errTitle);
+
+            const errBox = document.createElement('div');
+            errBox.className = 'output-error';
+            errBox.textContent = p.errorText;
+            outputArea.appendChild(errBox);
+
+            const hintContainer = document.createElement('div');
+            hintContainer.className = 'hint-container';
+            const hintTitle = document.createElement('div');
+            hintTitle.className = 'hint-title';
+            hintTitle.textContent = "ヒント";
+            hintContainer.appendChild(hintTitle);
+
+            const hintBox = document.createElement('div');
+            hintBox.className = 'output-error';
+            hintBox.textContent = p.hintText;
+            hintContainer.appendChild(hintBox);
+            outputArea.appendChild(hintContainer);
+
+            const aiContainer = document.createElement('div');
+            aiContainer.className = 'ai-container';
+            const aiTitle = document.createElement('div');
+            aiTitle.className = 'ai-section-title';
+            aiTitle.textContent = "なかなか解決できない場合は、AIに相談してみましょう：";
+            aiContainer.appendChild(aiTitle);
+
+            const aiBtn = document.createElement('button');
+            aiBtn.className = 'ai-prompt-btn';
+            aiBtn.textContent = "都立AI用プロンプトを作成する";
+            aiBtn.onclick = openAiModal;
+            aiContainer.appendChild(aiBtn);
+
+            outputArea.appendChild(aiContainer);
+            outputArea.scrollTop = outputArea.scrollHeight;
+        }
+
+        function clearOutput() {
+            outputArea.innerHTML = '';
+            outputArea.removeAttribute('data-has-error');
+            outputArea.style.fontSize = currentFontSize + "px";
+        }
+
+        async function initPython() {
+            try {
+                statusSpan.textContent = '環境ロード中...';
+                pyodide = await loadPyodide();
+                pyodide.setStdout({ batched: (msg) => appendOutput(msg + '\n') });
+                pyodide.setStderr({ batched: (msg) => appendErrorOutput(new Error(msg)) });
+                await pyodide.runPythonAsync(`
+import builtins, js
+builtins.input = lambda p="": js.window.prompt(p) or ""
+                `);
+                statusSpan.textContent = '';
+                runBtn.disabled = false;
+            } catch (err) {
+                statusSpan.textContent = 'エラー';
+                appendErrorOutput(err);
+            }
+        }
+        initPython();
+
+        async function runCode() {
+            if (!pyodide) return;
+            clearOutput();
+            try { await pyodide.runPythonAsync(editor.getValue()); }
+            catch (err) { appendErrorOutput(err); }
+        }
+    </script>
+</body>
+</html>
