@@ -21,6 +21,13 @@
         .ai-section-title { font-size: 14px; color: #666; font-weight: normal; }
         .ai-prompt-btn { background-color: #f0f0f0; color: #333; border: 1px solid #ccc; border-radius: 4px; padding: 6px 12px; font-size: 14px; cursor: pointer; align-self: flex-start; transition: background-color 0.15s ease; }
         .ai-prompt-btn:hover { background-color: #e0e0e0; }
+        
+        /* 実行中オーバーレイ（ローディング画面） */
+        .execution-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255, 255, 255, 0.85); z-index: 900; justify-content: center; align-items: center; flex-direction: column; }
+        .exec-spinner { width: 50px; height: 50px; border: 5px solid #ccc; border-top: 5px solid #2e7d32; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 16px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .exec-text { font-size: 20px; font-weight: bold; color: #333; }
+
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
         .modal-content { background-color: #fff; padding: 20px; border-radius: 8px; width: 80%; max-width: 600px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; flex-direction: column; gap: 12px; position: relative; }
         .modal-close-btn { position: absolute; top: 15px; right: 15px; width: 30px; height: 30px; border: 2px solid #757575; border-radius: 50%; background-color: transparent; color: #757575; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s ease; padding: 0; }
@@ -79,6 +86,13 @@
         </div>
     </div>
 
+    <!-- 実行中オーバーレイ -->
+    <div class="execution-overlay" id="exec-overlay">
+        <div class="exec-spinner"></div>
+        <div class="exec-text">プログラムを実行中...</div>
+    </div>
+
+    <!-- 都立AI用プロンプト生成用モーダル -->
     <div class="modal-overlay" id="ai-modal">
         <div class="modal-content">
             <button class="modal-close-btn" onclick="closeAiModal()" title="閉じる">
@@ -134,8 +148,9 @@
             el.addEventListener('touchend', stop);
             el.addEventListener('touchcancel', stop);
         }
-        bindHoldAction('font-plus-btn', 1);
-        bindHoldAction('font-minus-btn', -1);
+        
+        bindHoldAction('font-plus-btn', 4);
+        bindHoldAction('font-minus-btn', -4);
 
         async function downloadCode() {
             const code = editor.getValue();
@@ -243,13 +258,21 @@ ${latestErrorStr}`;
 
         function getPythonErrorParts(err) {
             let str = err.toString();
-            let hint = "エラーの内容を確認して、プログラムを見直してみましょう。";
-            if (str.includes("SyntaxError")) hint = "書き間違い（構文エラー）があります。\n・文の最後にコロン「:」をつけ忘れていませんか？\n・カッコ「( )」「{ }」「[ ]」の閉じ忘れはありませんか？\n・全角スペースが混ざっていませんか？";
+            let hint = "エラーの内容を確認して、プログラムを見直してみましょう。\nどうしても分からない場合は、一度ページを再読み込み（リロード）してやり直してみてください。";
+            
+            // TimeoutExceptionが発生した場合は無限ループ特有のエラー文に差し替える
+            if (str.includes("TimeoutException")) {
+                str = "TimeoutError: プログラムの実行時間が長すぎます（5秒を超過）。";
+                hint = "処理が途中で強制終了されました。\n・while文やfor文が「無限ループ（終わらない繰り返し）」になっていませんか？\n・または、計算量が多すぎる非効率なプログラムになっている可能性があります。";
+            }
+            else if (str.includes("SyntaxError")) hint = "書き間違い（構文エラー）があります。\n・文の最後にコロン「:」をつけ忘れていませんか？\n・カッコ「( )」「{ }」「[ ]」の閉じ忘れはありませんか？\n・全角スペースが混ざっていませんか？";
             else if (str.includes("NameError")) hint = "名前エラー（見つからない名前）です。\n・変数名や関数名のスペルミス（打ち間違い）を確認してみましょう。\n・文字（文字列）を使うときにクォーテーション「\"」や「'」で囲み忘れていませんか？";
             else if (str.includes("TypeError")) hint = "データ型のエラーです。\n・文字と数値をそのまま足し算（`+`）するなど、種類の違うデータを一緒に計算していませんか？";
+            else if (str.includes("ValueError")) hint = "値のエラーです。\n・数値に変換できない文字（ひらがなや漢字、全角の数字など）を整数（int）にしようとしていませんか？\n・入力する際は『半角の数字』を入力してください。";
             else if (str.includes("IndexError")) hint = "範囲外エラーです。\n・リストの要素数よりも大きい（または存在しない）何番目かを指定していませんか？";
             else if (str.includes("ZeroDivisionError")) hint = "ゼロ除算エラーです。\n・数値を 0 で割ろうとしています。";
             else if (str.includes("IndentationError")) hint = "インデント（行頭の余白・タブ）のエラーです。\n・「Tabキー」や「スペース」の数がズレていないか確認してください。";
+            
             return { errorText: str, hintText: hint };
         }
 
@@ -322,10 +345,35 @@ ${latestErrorStr}`;
                 pyodide = await loadPyodide();
                 pyodide.setStdout({ batched: (msg) => appendOutput(msg + '\n') });
                 pyodide.setStderr({ batched: (msg) => appendErrorOutput(new Error(msg)) });
+                
+                // 空白中断用の例外、タイムアウト用の例外、状態リセット用関数、時間計測用関数を定義
                 await pyodide.runPythonAsync(`
-import builtins, js
-builtins.input = lambda p="": js.window.prompt(p) or ""
+import builtins, js, sys, time
+
+class StopExecution(Exception): pass
+class TimeoutException(Exception): pass
+
+def _custom_input(p=""):
+    v = js.window.prompt(p)
+    if v is None or v == "":
+        raise StopExecution("Input cancelled or empty")
+    return v
+
+builtins.input = _custom_input
+
+def _reset_env():
+    for k in list(globals().keys()):
+        if k not in ['__name__', '__doc__', '__package__', '__loader__', '__spec__', '__annotations__', '__builtins__', 'builtins', 'js', 'sys', 'time', 'StopExecution', 'TimeoutException', '_custom_input', '_reset_env', '_trace_calls', '_start_time']:
+            del globals()[k]
+
+def _trace_calls(frame, event, arg):
+    global _start_time
+    # 5秒経過したら強制終了
+    if time.time() - _start_time > 5.0:
+        raise TimeoutException("Timeout")
+    return _trace_calls
                 `);
+                
                 statusSpan.textContent = '';
                 runBtn.disabled = false;
             } catch (err) {
@@ -337,9 +385,43 @@ builtins.input = lambda p="": js.window.prompt(p) or ""
 
         async function runCode() {
             if (!pyodide) return;
+            
+            const overlay = document.getElementById('exec-overlay');
+            runBtn.disabled = true;
+            overlay.style.display = 'flex';
+            
+            const startTime = Date.now();
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
             clearOutput();
-            try { await pyodide.runPythonAsync(editor.getValue()); }
-            catch (err) { appendErrorOutput(err); }
+            
+            try { 
+                await pyodide.runPythonAsync(`_reset_env()`);
+                // 実行前にタイマーをセットして監視開始
+                await pyodide.runPythonAsync(`
+_start_time = time.time()
+sys.settrace(_trace_calls)
+                `);
+                await pyodide.runPythonAsync(editor.getValue()); 
+            } catch (err) {
+                if (err.toString().includes("StopExecution")) {
+                    // 空白処理
+                } else {
+                    appendErrorOutput(err); 
+                }
+            } finally {
+                // 処理が終わったら必ず監視を解除する
+                await pyodide.runPythonAsync(`sys.settrace(None)`);
+
+                const elapsedTime = Date.now() - startTime;
+                const minDisplayTime = 400; 
+                if (elapsedTime < minDisplayTime) {
+                    await new Promise(resolve => setTimeout(resolve, minDisplayTime - elapsedTime));
+                }
+
+                overlay.style.display = 'none';
+                runBtn.disabled = false;
+            }
         }
     </script>
 </body>
