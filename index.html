@@ -17,10 +17,14 @@
         .pane-header { background-color: #e9ecef; border-bottom: 1px solid #ddd; color: #495057; font-size: 21px; font-weight: bold; }
         .editor-toolbar { background-color: #272822; gap: 10px; flex-wrap: wrap; }
         .output-area { flex: 1; padding: 12px; font-family: Consolas, Monaco, monospace; font-size: 28px; background-color: #fafafa; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
-        .output-error { color: #b71c1c; background-color: #ffebee; padding: 10px; border-radius: 4px; border-left: 5px solid #d32f2f; display: block; margin-top: 4px; }
-        .error-title, .hint-title { font-weight: bold; color: #333; }
-        .hint-container, .ai-container { margin-top: 16px; }
-        .ai-container { padding-top: 16px; border-top: 1px dashed #ccc; display: flex; flex-direction: column; gap: 6px; }
+        
+        .output-error { color: #b71c1c; background-color: #ffebee; padding: 10px; border-radius: 4px; border-left: 5px solid #d32f2f; display: block; margin: 0; }
+        
+        /* タイトル文字を1.2倍に大きくし、ヒントの上には1行分の余白（1em）を追加 */
+        .error-title { font-weight: bold; color: #333; margin: 0; padding: 0; font-size: 1.2em; }
+        .hint-title { font-weight: bold; color: #333; margin: 1em 0 0 0; padding: 0; font-size: 1.2em; }
+        
+        .ai-container { margin-top: 16px; padding-top: 16px; border-top: 1px dashed #ccc; display: flex; flex-direction: column; gap: 6px; }
         .ai-section-title { font-size: 14px; color: #666; }
         
         .btn, .ai-prompt-btn { border-radius: 4px; cursor: pointer; border: none; display: flex; align-items: center; justify-content: center; transition: background-color 0.15s; }
@@ -208,18 +212,7 @@
             outputArea.style.fontSize = Math.max(10, Math.floor(currentFontSize / 2)) + "px";
             latestErrorStr = err.toString();
             
-            outputArea.innerHTML += `
-                <div class="error-title">エラーが発生しました</div>
-                <div class="output-error">${latestErrorStr}</div>
-                <div class="hint-container">
-                    <div class="hint-title">ヒント</div>
-                    <div class="output-error">${getErrorHint(latestErrorStr)}</div>
-                </div>
-                <div class="ai-container">
-                    <div class="ai-section-title">なかなか解決できない場合は、AIに相談してみましょう：</div>
-                    <button class="ai-prompt-btn" onclick="openAiModal()">都立AI用プロンプトを作成する</button>
-                </div>
-            `;
+            outputArea.innerHTML += `<div class="error-title">エラーが発生しました</div><div class="output-error">${latestErrorStr}</div><div class="hint-title">ヒント</div><div class="output-error">${getErrorHint(latestErrorStr)}</div><div class="ai-container"><div class="ai-section-title">なかなか解決できない場合は、AIに相談してみましょう：</div><button class="ai-prompt-btn" onclick="openAiModal()">都立AI用プロンプトを作成する</button></div>`;
             outputArea.scrollTop = outputArea.scrollHeight;
         }
 
